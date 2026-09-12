@@ -37,6 +37,8 @@ The practical benefits are:
 | Codex 0.148.0 | Works in Xcode and is the recommended tested version |
 | Codex 0.149.x | Failed through Xcode |
 | Codex 0.154.0-alpha.6.2 | Xcode Codex account handshake failed |
+| Codex 0.154.0 release | Xcode Codex Account row spun indefinitely; account initialization failed even with both runtime binaries installed |
+| GPT-6 Astra through Xcode 26.6 | Could not be tested because Codex 0.154.0 could not complete Xcode account initialization |
 | GPT-5.6 Luna `high` | Works |
 | GPT-5.6 Luna `xhigh` | Works |
 | GPT-5.6 Luna `max` through Xcode | Fails |
@@ -100,25 +102,38 @@ Find the native Apple Silicon binary without assuming a fixed npm prefix:
 
 ```bash
 NPM_ROOT="$(npm root -g)"
-CODEX_NATIVE="$NPM_ROOT/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+CODEX_BIN_DIR="$NPM_ROOT/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin"
+CODEX_NATIVE="$CODEX_BIN_DIR/codex"
+CODEX_CODE_MODE_HOST="$CODEX_BIN_DIR/codex-code-mode-host"
 
 "$CODEX_NATIVE" --version
+ls -l "$CODEX_CODE_MODE_HOST"
 ```
 
 It should report Codex 0.148.0.
 
-### 3. Copy 0.148.0 into Xcode's runtime directory
+### 3. Copy 0.148.0 and its code-mode host into Xcode's runtime directory
 
 ```bash
 mkdir -p "$BASE/codex/0.148.0"
 
 cp "$CODEX_NATIVE" "$BASE/codex/0.148.0/codex"
-chmod +x "$BASE/codex/0.148.0/codex"
+cp "$CODEX_CODE_MODE_HOST" "$BASE/codex/0.148.0/codex-code-mode-host"
+chmod +x "$BASE/codex/0.148.0/codex" "$BASE/codex/0.148.0/codex-code-mode-host"
 
+ls -la "$BASE/codex/0.148.0"
 "$BASE/codex/0.148.0/codex" --version
 ```
 
 Do not replace Xcode's original runtime directory. Keeping versions separately makes rollback simple.
+
+**Important:** Codex 0.148.0 expects `codex-code-mode-host` to be present alongside `codex`. Copying only the main `codex` executable can make the model itself appear to work while Xcode-native tool calls fail. In the tested setup, Xcode's `xcode-tools` MCP server initialized successfully, but tool calls failed with an error like:
+
+```text
+failed to spawn code-mode host .../codex/codex-code-mode-host: No such file or directory (os error 2)
+```
+
+Installing the matching 0.148.0 `codex-code-mode-host` next to the 0.148.0 `codex` executable fixed the Xcode tool path.
 
 ### 4. Point Xcode at Codex 0.148.0
 
@@ -191,6 +206,25 @@ service tier: standard/default
 authentication: ChatGPT account
 ```
 
+
+## Verify Xcode-native tools
+
+After restarting Xcode, verify that Codex is using Xcode's native tools rather than guessing from project context. With a project open, use this prompt:
+
+```text
+Use the Xcode tools to tell me the currently open project's name and list its top-level project files. Do not use shell commands or direct filesystem inspection.
+```
+
+In the tested setup, Codex reported using Xcode's `XcodeLS` tool and returned the live project navigator contents.
+
+For a stronger end-to-end test, ask Codex to make an obvious source edit through Xcode:
+
+```text
+Using only the Xcode tools, edit ContentView.swift and change the displayed text in the default SwiftUI view to "Xcode Tools Are Working". Do not use shell commands or direct filesystem access. After making the change, tell me which Xcode tool you used.
+```
+
+The source edit was successfully applied in the tested 0.148.0 configuration. This confirms that the Xcode-native tool bridge works when both matching runtime binaries are installed.
+
 ## Using GPT-5.6 Sol
 
 Change `config.toml`:
@@ -246,6 +280,24 @@ This is expected. macOS privacy controls can treat a new executable/version/path
 
 If your Xcode projects are in Documents and you want Codex to work with them, allow the access.
 
+
+## Codex 0.154.0 and GPT-6 Astra testing
+
+Codex 0.154.0 was also tested because newer Codex releases add support for GPT-6 Astra. The release package contained both required Apple Silicon runtime binaries:
+
+```text
+codex
+codex-code-mode-host
+```
+
+Both were copied into a separate `0.154.0` Xcode runtime directory and the Xcode symlink was pointed at it. This avoided changing or deleting the known-good 0.148.0 installation.
+
+With Xcode 26.6, however, the Codex **Account** row remained on an indefinite spinner and account initialization never completed. This was the same general failure previously seen with `0.154.0-alpha.6.2`. Because the Xcode/Codex account handshake failed before normal operation, GPT-6 Astra could not be tested through Xcode's built-in Codex integration.
+
+This means 0.154.0 should not currently replace 0.148.0 for this Xcode 26.6 configuration. It does **not** establish that Astra itself is incompatible with Xcode. The failure occurs earlier, at the Xcode/app-server account initialization layer.
+
+If experimenting with future Codex releases, keep 0.148.0 intact and install each candidate in its own directory. Switching back is then just a symlink change followed by a full Xcode restart.
+
 ## Rollback
 
 If you already copied Codex 0.147.0 into Xcode's agent directory:
@@ -283,7 +335,7 @@ ls -la "$HOME/Library/Developer/Xcode/CodingAssistant/Agents/XcodeVersions"
 
 If the modification stops working after an Xcode update, inspect the new build directory and repeat the symlink step if that Xcode build remains compatible with Codex 0.148.0.
 
-Do not assume newer Codex releases will work just because 0.148.0 does. In this testing, 0.149 failed through Xcode 26.6, while 0.154.0-alpha.6.2 failed during Xcode's Codex account initialization.
+Do not assume newer Codex releases will work just because 0.148.0 does. In this testing, 0.149 failed through Xcode 26.6, and both 0.154.0-alpha.6.2 and the 0.154.0 release failed during Xcode's Codex account initialization. The 0.154.0 release was tested with both `codex` and its matching `codex-code-mode-host`, so the account failure was not caused by the missing-helper problem that affected the initial 0.148.0 tool test.
 
 ## Recommended configuration
 
@@ -303,3 +355,4 @@ Use Sol selectively when its additional capability is worth the higher ChatGPT s
 - [OpenAI Codex repository](https://github.com/openai/codex)
 - [Codex 0.148.0 release](https://github.com/openai/codex/releases/tag/rust-v0.148.0)
 - [Codex 0.148.0 GPT-5.6 Sol `prompt_cache_retention` issue](https://github.com/openai/codex/issues/39397)
+- [Codex releases](https://github.com/openai/codex/releases)

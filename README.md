@@ -2,6 +2,8 @@
 
 This documents a tested way to make Xcode's built-in Codex integration use a newer Codex runtime and newer OpenAI models through a normal ChatGPT subscription. No API key is required.
 
+Heads up: xhigh is the highest reasoning mode that was found to work. If you want Luna max, this won't get you that. Luna xhigh does work though.
+
 ## Tested environment
 
 - Xcode Version 26.6 (17F113)

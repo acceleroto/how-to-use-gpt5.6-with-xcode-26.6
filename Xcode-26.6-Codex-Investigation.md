@@ -23,7 +23,7 @@ no service_tier override
 GPT-5.6 Luna `max` works in Codex 0.148.0 itself, including through
 `codex app-server`, but Xcode 26.6 appears unable to represent or parse
 `max`. GPT-6 Astra requires Codex 0.153.0 or newer, while the tested
-0.154 runtimes currently break Xcode's Account/auth integration.
+0.153 and 0.154 runtimes currently break Xcode's Account/auth integration.
 
 ## Tested environment
 
